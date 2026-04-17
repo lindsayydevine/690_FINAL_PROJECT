@@ -46,7 +46,7 @@ from src.data.preprocessing import (
 # ===================================================================
 
 # YOUR DATASET PARAMETERS:
-ORIGINAL_SAMPLE_RATE = 50    # Hz — your data's original sample rate
+ORIGINAL_SAMPLE_RATE = 100    # Hz — your data's original sample rate
 TARGET_SAMPLE_RATE = 30      # Hz — BioPM expects 30 Hz
 WINDOW_SEC = 10              # seconds per window
 SLIDE_SEC = 5                # seconds overlap
@@ -71,19 +71,17 @@ def load_my_data(file_path):
     df = pd.read_csv(file_path)
 
     # EDIT: select your acceleration columns
-    acc = df[['acc_x', 'acc_y', 'acc_z']].values
+    acc = df[['x', 'y', 'z']].values
 
     # EDIT: convert units if needed
     # If your data is in m/s², uncomment:
     # acc = acc / 9.80665
 
     # EDIT: select your label column
-    labels = df['label'].values.astype(int)
+    labels = df['annotation'].values.astype(int)
 
-    # EDIT: timestamps — if you have a timestamp column:
-    # time = df['timestamp'].values
-    # If not, create synthetic timestamps:
-    time = np.arange(len(acc)) / ORIGINAL_SAMPLE_RATE
+    # EDIT: select your timestamps column
+    time = df['time'].values
 
     # Clean NaN values
     acc_df = pd.DataFrame(acc, columns=['x', 'y', 'z'])
