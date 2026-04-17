@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
     'HighF1': 12,        # bandpass upper cutoff (Hz)
     'LowF1': 0.5,       # bandpass lower cutoff / lowpass cutoff (Hz)
     'Order1': 6,         # filter order
-    'ori_FS': 50,        # STUDENT: original sample rate of your data
+    'ori_FS': 100,        # STUDENT: original sample rate of your data
     'target_FS': 30,     # target sample rate after resampling
     'WS': 10,            # window size in seconds
     'SlideSize': 5,      # slide / hop size in seconds
@@ -121,8 +121,8 @@ def load_raw_data(file_path, config):
 
     # STUDENT: change column indices to match your dataset
     # mHealth: cols 14,15,16 = right-lower-arm accelerometer; col 23 = label
-    acc_raw = df.iloc[:, [14, 15, 16]].values
-    labels = df.iloc[:, 23].values
+    acc_raw = df.iloc[:, [1, 2, 3]].values
+    labels = df.iloc[:, 4].values
 
     # STUDENT: change units if needed
     # mHealth raw data is in m/s² — convert to g
@@ -325,7 +325,7 @@ def main():
         print(f"Processing {fname} ...")
         # STUDENT: extract subject_id from your filename convention
         # Example for mHealth: "mHealth_subject1.log" → subject_id = "1"
-        subject_id = fname.split("subject")[-1].split(".")[0]
+        subject_id = fname.split("P")[-1].split(".")[0]
         try:
             subject_id = int(subject_id)
         except ValueError:
