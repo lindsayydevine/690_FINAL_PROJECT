@@ -341,7 +341,8 @@ def load_preprocessed_h5(data_root):
     all_acc, all_label, all_pid, all_grav, all_raw = [], [], [], [], []
     for path in sorted(matched):
         parts = path.replace('.h5', '').split('_')
-        subject_id = int(parts[-1])
+        subject_id_str = parts[-1]
+        subject_id = int(re.sub("[^0-9]", "", subject_id_str))
         with h5py.File(path, "r") as hf:
             all_acc.append(np.array(hf['x_acc_filt']))
             all_raw.append(np.array(hf['window_acc_raw']))

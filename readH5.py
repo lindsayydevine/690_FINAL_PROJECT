@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 
 # AccLabel is acceleration filtered and frequency aligned
-with h5py.File('./preprocessed_data/Data_AccLabel_P034.h5', 'r') as f:
+with h5py.File('./preprocessed_data/Data_AccLabel_P001.h5', 'r') as f:
     # List all the "folders" (datasets) inside
     print("Keys in HDF5:", list(f.keys()))
     
@@ -18,7 +18,7 @@ with h5py.File('./preprocessed_data/Data_AccLabel_P034.h5', 'r') as f:
 
 
 # MeLabel is movement elements based on Zero Crossings
-with h5py.File('./preprocessed_data/Data_MeLabel_P034.h5', 'r') as f:
+with h5py.File('./preprocessed_data/Data_MeLabel_P001.h5', 'r') as f:
     # List all the "folders" (datasets) inside
     print("Keys in HDF5:", list(f.keys()))
     

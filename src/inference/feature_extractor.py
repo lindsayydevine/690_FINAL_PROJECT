@@ -27,6 +27,7 @@ from ..models.biopm import (
 )
 from ..data.dataset import MovementElementDataset
 from ..data.preprocessing import load_preprocessed_h5
+from tqdm import tqdm
 
 
 # Target length for gravity interpolation (300 timesteps × 3 axes = 900-d)
@@ -86,7 +87,7 @@ def extract_features(data_root: str, checkpoint_path: str,
     global_idx = 0
 
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader, desc="Extracting BioPM Features"):
             my_X, my_Y, my_PID, raw_batch, my_pos, my_add = batch
             bs = my_X.shape[0]
 

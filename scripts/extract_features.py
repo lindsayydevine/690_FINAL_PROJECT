@@ -14,13 +14,7 @@ This is the primary student-facing entry point for feature extraction.
   5. Saves features, labels, and subject IDs to .npz
 
 === USAGE ===
-
-  python scripts/extract_features.py \
-      --data_dir     /path/to/preprocessed_h5_files \
-      --checkpoint   checkpoints/checkpoint.pt \
-      --output       features/my_features.npz \
-      --device       cpu \
-      --batch_size   32
+  python scripts/extract_features.py --data_dir ./preprocessed_data --checkpoint checkpoints/checkpoint.pt --output features/my_features.npz --device cpu --batch_size 128
 
 === OUTPUT FORMAT ===
 
@@ -83,8 +77,8 @@ def main():
     features, labels, pids = extract_features(
         data_root=args.data_dir,
         checkpoint_path=args.checkpoint,
-        batch_size=args.batch_size,
-        device=args.device,
+        batch_size=args.batch_size, # boosted from 32 to 128
+        device=args.device
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
