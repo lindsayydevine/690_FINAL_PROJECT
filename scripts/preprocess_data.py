@@ -39,12 +39,7 @@ Per subject, produces two HDF5 files in the output directory:
 The Data_MeLabel_*.h5 files are what extract_features.py expects.
 
 === USAGE ===
-
-  python scripts/preprocess_data.py \\
-      --raw_data_dir /path/to/raw/files \\
-      --output_dir   /path/to/output \\
-      --window_sec   10 \\
-      --slide_sec    5
+python scripts/preprocess_data.py --raw_data_dir ./data --output_dir ./preprocessed_data --window_sec 10 --slide_sec 5 --ori_fs 100
 """
 
 import os
@@ -54,13 +49,16 @@ import statistics
 import numpy as np
 import pandas as pd
 import h5py
+import re
+from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.data.preprocessing import (
     resample_to_target_fs, bandpass_filter, lowpass_filter,
     detect_zero_crossings, assign_zero_crossings,
 )
-
 
 # ===================================================================
 # Configuration defaults (match the original BioPM mHealth pipeline)
@@ -88,8 +86,8 @@ def parse_args():
                    help="Window size in seconds (default: 10)")
     p.add_argument("--slide_sec", type=int, default=5,
                    help="Slide/overlap in seconds (default: 5)")
-    p.add_argument("--ori_fs", type=int, default=50,
-                   help="Original sample rate of your data (default: 50)")
+    p.add_argument("--ori_fs", type=int, default=100,
+                   help="Original sample rate of your data (default: 100)")
     p.add_argument("--target_fs", type=int, default=30,
                    help="Target sample rate after resampling (default: 30)")
     return p.parse_args()
@@ -116,22 +114,19 @@ def load_raw_data(file_path, config):
     If your data does not have per-sample timestamps, create synthetic
     ones: time_array = np.arange(N) / original_sample_rate
     """
-    # ---- mHealth example (for reference) ----
-    df = pd.read_csv(file_path, sep=r'\s+', header=None)
-
-    # STUDENT: change column indices to match your dataset
-    # mHealth: cols 14,15,16 = right-lower-arm accelerometer; col 23 = label
+    df = pd.read_csv(file_path, sep=',', header=0, low_memory=False)
     acc_raw = df.iloc[:, [1, 2, 3]].values
-    labels = df.iloc[:, 4].values
+    
+    # Get the lookup table from config
+    lookup = config.get('lookup', {})
 
-    # STUDENT: change units if needed
-    # mHealth raw data is in m/s² — convert to g
-    acc_raw = acc_raw / 9.80665
+    # Match the annotation column to the dictionary
+    # Default to 0 if the string isn't in your dictionary
+    labels = df.iloc[:, 4].apply(lambda x: lookup.get(x, 0)).values
 
     # Clean invalid values
     acc_df = pd.DataFrame(acc_raw, columns=['x', 'y', 'z'])
-    acc_df = acc_df.apply(pd.to_numeric, errors='coerce').interpolate()
-    acc_raw = acc_df.values
+    acc_raw = acc_df.apply(pd.to_numeric, errors='coerce').ffill().bfill().values
 
     # Synthetic timestamps at original sample rate
     time_array = np.arange(len(acc_raw)) / config['ori_FS']
@@ -142,29 +137,45 @@ def load_raw_data(file_path, config):
 # ===================================================================
 # STUDENT: Implement this function for your label mapping
 # ===================================================================
-def remap_labels(labels_raw, skip_labels=None):
+# def remap_labels(labels_raw, skip_labels=None):
+#     """
+#     Map raw integer labels to a contiguous 0..K-1 range and optionally
+#     skip certain labels (e.g. 'null' class).
+
+#     STUDENT: adapt this for your dataset's label scheme.
+
+#     Args:
+#         labels_raw:   array of raw integer labels
+#         skip_labels:  set of label values to exclude
+
+#     Returns:
+#         labels_mapped: array of remapped labels (or original if no mapping)
+#     """
+
+
+#     # Build mapping from old labels to contiguous new labels
+#     unique_old = sorted(set(int(l) for l in np.unique(labels_raw)) - skip_labels)
+#     old_to_new = {old: new for new, old in enumerate(unique_old)}
+
+#     # print(f"--- Activity Map Created ---")
+#     # for old, new in old_to_new.items():
+#     #     print(f" Original Code {old} -> Model Label {new}")
+
+#     return old_to_new, skip_labels
+
+
+def get_global_label_map(lookup_dict, skip_labels={0}):
     """
-    Map raw integer labels to a contiguous 0..K-1 range and optionally
-    skip certain labels (e.g. 'null' class).
-
-    STUDENT: adapt this for your dataset's label scheme.
-
-    Args:
-        labels_raw:   array of raw integer labels
-        skip_labels:  set of label values to exclude
-
-    Returns:
-        labels_mapped: array of remapped labels (or original if no mapping)
+    Creates a single, universal mapping for all possible CPA codes 
+    found in your annotation-label-dictionary.csv.
     """
-    if skip_labels is None:
-        # STUDENT: mHealth skips label 0 (null) and 12 (jump front & back)
-        skip_labels = {0, 12}
-
-    # Build mapping from old labels to contiguous new labels
-    unique_old = sorted(set(int(l) for l in np.unique(labels_raw)) - skip_labels)
-    old_to_new = {old: new for new, old in enumerate(unique_old)}
-    return old_to_new, skip_labels
-
+    # Get all unique CPA codes from your lookup table
+    all_cpa_codes = sorted(set(lookup_dict.values()) - skip_labels)
+    
+    # Create the universal mapping: CPA_CODE -> Contiguous_Index
+    global_to_new = {cpa: idx for idx, cpa in enumerate(all_cpa_codes)}
+    
+    return global_to_new
 
 # ===================================================================
 # Main preprocessing loop
@@ -191,11 +202,15 @@ def preprocess_one_subject(file_path, subject_id, config, output_dir):
     ws = int(config['WS'] * config['target_FS'])  # window in samples
     step = int(config['SlideSize'] * config['target_FS'])
 
-    label_map, skip_labels = remap_labels(labels_resampled)
+    label_map = config['global_label_map']
+    skip_labels = {0}
 
     # Accumulate windows
     win_acc_raw, win_acc_filt_grav, win_labels = [], [], []
     win_x_acc_filt, win_x_gravity = [], []
+
+    unique_labels = np.unique(labels_resampled)
+    print(f"--- Subject {subject_id}: Found codes {unique_labels} ---")
 
     start = 0
     while start + ws < acc_filt.shape[0]:
@@ -206,6 +221,7 @@ def preprocess_one_subject(file_path, subject_id, config, output_dir):
             start += step
             continue
 
+        # mode_label here is the CPA code (e.g., 7030)
         if mode_label in skip_labels:
             start += step
             continue
@@ -214,6 +230,10 @@ def preprocess_one_subject(file_path, subject_id, config, output_dir):
         w_filt = acc_filt[start:start + ws, :]
         w_grav = acc_gravity[start:start + ws, :]
         w_time = time_resampled[start:start + ws]
+
+        if np.mean(np.abs(w_filt)) < 0.01: 
+            start += step
+            continue
 
         # Zero-crossing movement-element extraction
         try:
@@ -249,7 +269,7 @@ def preprocess_one_subject(file_path, subject_id, config, output_dir):
 
         x_gravity = w_grav.astype(np.float32)
 
-        mapped_label = label_map.get(mode_label, mode_label)
+        mapped_label = label_map[mode_label] # Ex: Now 7030 is ALWAYS 5 (across all participants)
 
         win_acc_raw.append(w_raw.astype(np.float32))
         win_acc_filt_grav.append(
@@ -289,6 +309,21 @@ def preprocess_one_subject(file_path, subject_id, config, output_dir):
 
     print(f"  Saved {len(win_labels)} windows for subject {subject_id}")
 
+def process_file_wrapper(fname, config, output_dir, raw_dir):
+    """A helper function to handle the processing of a single file."""
+    subject_id = fname.split(".")[0]
+    filepath = os.path.join(raw_dir, fname)
+    
+    # We check for the file here too, to be extra safe with parallel runs
+    out_check = os.path.join(output_dir, f"Data_MeLabel_{subject_id}.h5")
+    if os.path.exists(out_check):
+        return f"Skipped {subject_id}"
+
+    try:
+        preprocess_one_subject(filepath, subject_id, config, output_dir)
+        return f"Finished {subject_id}"
+    except Exception as e:
+        return f"Error {subject_id}: {e}"
 
 def main():
     args = parse_args()
@@ -309,38 +344,44 @@ def main():
     print(f"  Pad size:      {config['pad_size']} patches/window")
     print()
 
-    # STUDENT: list your raw data files here
-    # This example looks for mHealth-style files; change the pattern for yours
+    # Load the annotation dictionary
+    dict_df = pd.read_csv('./data/annotation-label-dictionary.csv', usecols=['annotation'])
+
+    # 1. Generate the CPA lookup from your CSV
+    annotation_lookup = {}
+    for anno in dict_df['annotation'].unique():
+        match = re.search(r'(\d{4,5})', str(anno))
+        if match:
+            annotation_lookup[anno] = int(match.group(1))
+    
+    # 2. GENERATE GLOBAL MAP HERE
+    # This ensures 7030 is ALWAYS index X, regardless of the subject
+    global_label_map = get_global_label_map(annotation_lookup)
+    config['global_label_map'] = global_label_map
+    config['lookup'] = annotation_lookup # Raw string -> CPA code
+
     raw_dir = args.raw_data_dir
     files = sorted([
-        f for f in os.listdir(raw_dir)
-        if f.endswith(('.log', '.csv', '.txt'))
+        f for f in os.listdir(raw_dir) # do not get metadata csv or annotation-label-dictionary csv
+        if f.startswith('P') and f.endswith('.csv') # only care about P001 to P151 csvs
     ])
 
     if not files:
         print(f"ERROR: No data files found in {raw_dir}")
         sys.exit(1)
+    
+    print(f"Parallel processing started on {os.cpu_count()} cores...")
 
-    for fname in files:
-        print(f"Processing {fname} ...")
-        # STUDENT: extract subject_id from your filename convention
-        # Example for mHealth: "mHealth_subject1.log" → subject_id = "1"
-        subject_id = fname.split("P")[-1].split(".")[0]
-        try:
-            subject_id = int(subject_id)
-        except ValueError:
-            subject_id = fname.replace('.', '_')
-
-        filepath = os.path.join(raw_dir, fname)
-        try:
-            preprocess_one_subject(filepath, subject_id, config, args.output_dir)
-        except Exception as e:
-            print(f"  ERROR processing {fname}: {e}")
-            continue
+    worker = partial(process_file_wrapper, config=config, 
+                    output_dir=args.output_dir, raw_dir=args.raw_data_dir)
+    
+    with ProcessPoolExecutor() as executor:
+        list(tqdm(executor.map(worker, files, chunksize=2), 
+                           total=len(files), 
+                           desc="Overall Progress"))
 
     print("\nPreprocessing complete!")
     print(f"Output saved to: {args.output_dir}")
-
 
 if __name__ == "__main__":
     main()
