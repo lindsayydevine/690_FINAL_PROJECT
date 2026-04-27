@@ -50,9 +50,9 @@ from torch.utils.data import Dataset, DataLoader, random_split
 
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from src.models.biopm import load_pretrained_encoder, ConvEncode
+from src.models.biopm import load_pretrained_encoder
 from src.data.preprocessing import load_preprocessed_h5
-from src.models.BioPMAutoregressor import BioPMAutoregressor
+from scripts.BioPMAutoregressor import BioPMAutoregressor
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -62,6 +62,24 @@ def parse_args():
     p.add_argument("--checkpoint", type=str, required=True,
                    help="Path to 50MR checkpoint.pt")
     p.add_argument("--save_path", type=str, required=True, help='Path to checkpoint')
+    p.add_argument("--batch_size", type=int, default=64,
+                   help="Batch size for token extraction and AR training")
+    p.add_argument("--epochs", type=int, default=20,
+                   help="Number of training epochs")
+    p.add_argument("--hidden_dim", type=int, default=128,
+                   help="GRU hidden size")
+    p.add_argument("--num_layers", type=int, default=2,
+                   help="Number of GRU layers")
+    p.add_argument("--dropout", type=float, default=0.1,
+                   help="GRU dropout")
+    p.add_argument("--val_split", type=float, default=0.1,
+                   help="Validation split fraction")
+    p.add_argument("--lr", type=float, default=1e-3,
+                   help="Learning rate")
+    p.add_argument("--seed", type=int, default=42,
+                   help="Random seed")
+    p.add_argument("--max_windows", type=int, default=None,
+                   help="Optional cap on preprocessed windows for faster experiments")
     p.add_argument("--mask_ratio", type=float, default=0.5,
                    help="Fraction of ME patches to mask (default: 0.5)")
     p.add_argument("--device", type=str, default="cpu")
@@ -169,10 +187,25 @@ def generate_tokens(model, seed_tokens, generate_steps, device="cpu", noise_std=
 
 def main():
     args = parse_args()
+    if not 0.0 < args.val_split < 1.0:
+        raise ValueError("--val_split must be between 0 and 1")
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     (X, pos_info, add_emb, labels, pids,
      X_grav, raw_acc) = load_preprocessed_h5(args.data_dir)
-    model = load_pretrained_encoder(args.checkpoint, device=args.device)
+    if args.max_windows is not None and X.shape[0] > args.max_windows:
+        rng = np.random.default_rng(args.seed)
+        subset_idx = np.sort(rng.choice(X.shape[0], size=args.max_windows, replace=False))
+        X = X[subset_idx]
+        pos_info = pos_info[subset_idx]
+        add_emb = add_emb[subset_idx]
+        labels = labels[subset_idx]
+        pids = pids[subset_idx]
+        X_grav = X_grav[subset_idx] if X_grav is not None else None
+        raw_acc = raw_acc[subset_idx]
+        print(f"Using a subset of {args.max_windows} windows for AR training")
 
     print("Loading pretrained BioPM encoder")
     model_biopm = load_pretrained_encoder(args.checkpoint, device=args.device)
@@ -191,6 +224,8 @@ def main():
     n_total = len(dataset)
     n_val = int(n_total * args.val_split)
     n_train = n_total - n_val
+    if n_train <= 0 or n_val <= 0:
+        raise ValueError("Not enough token windows for the requested validation split")
     train_ds, val_ds = random_split(dataset, [n_train, n_val])
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
@@ -205,7 +240,7 @@ def main():
         dropout=args.dropout,
     ).to(device)
 
-    optimizer = torch.optim.Adam(ar_model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(ar_model.parameters(), lr=args.lr)
 
     best_val = float('inf')
 
@@ -214,7 +249,11 @@ def main():
         tr_loss, tr_mse = train_one_epoch(ar_model, train_loader, optimizer, device)
         va_loss, va_mse = eval_one_epoch(ar_model, val_loader, device)
 
-        print(f"Epoch {epoch:02d}")
+        print(
+            f"Epoch {epoch:02d} | "
+            f"train_loss={tr_loss:.6f} train_mse={tr_mse:.6f} | "
+            f"val_loss={va_loss:.6f} val_mse={va_mse:.6f}"
+        )
 
         if va_loss < best_val:
             best_val = va_loss

@@ -90,10 +90,12 @@ def extract_features(data_root: str, checkpoint_path: str,
         for batch in tqdm(loader, desc="Extracting BioPM Features"):
             my_X, my_Y, my_PID, raw_batch, my_pos, my_add = batch
             bs = my_X.shape[0]
+            valid_mask = ~torch.isnan(my_X).any(dim=-1)
 
             my_X = my_X.to(device, dtype=torch.float)
             my_pos = my_pos.to(device, dtype=torch.float)
             my_add = my_add.to(device, dtype=torch.float)
+            valid_mask = valid_mask.to(device)
 
             # No masking at inference time
             mask = torch.zeros(bs, my_X.shape[1], device=device)
@@ -102,7 +104,7 @@ def extract_features(data_root: str, checkpoint_path: str,
             acc_tokens = model.encoder_acc(my_X, my_pos, mask, my_add)
 
             # Pool: mean + std → (B, 128)
-            acc_pooled = masked_mean_std(acc_tokens)
+            acc_pooled = masked_mean_std(acc_tokens, mask=valid_mask)
 
             # Gravity stream
             if X_grav_tensor is not None:

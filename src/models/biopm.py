@@ -343,7 +343,16 @@ def masked_mean(x, mask=None):
 
 def masked_mean_std(x, mask=None):
     """Mean + std pool over sequence.  x: (B, L, D) → (B, 2*D)."""
-    return torch.cat([x.mean(dim=1), x.std(dim=1)], dim=-1)
+    if mask is None:
+        return torch.cat([x.mean(dim=1), x.std(dim=1)], dim=-1)
+
+    mask = mask.to(dtype=x.dtype).unsqueeze(-1)
+    denom = mask.sum(dim=1).clamp(min=1.0)
+    mean = (x * mask).sum(dim=1) / denom
+    centered = (x - mean.unsqueeze(1)) * mask
+    var = (centered.pow(2).sum(dim=1) / denom).clamp(min=0.0)
+    std = torch.sqrt(var + 1e-6)
+    return torch.cat([mean, std], dim=-1)
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,8 @@
 /data/
 /preprocessed_data/
 /features/
+/group_share/
+/synthetic_tokens/
+.DS_Store
+__pycache__/
+*.pyc
