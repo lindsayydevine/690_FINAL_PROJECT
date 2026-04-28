@@ -28,7 +28,7 @@ def parse_args():
                    help="Directory with paired Data_MeLabel_*.h5 / Data_AccLabel_*.h5 files")
     p.add_argument("--encoder_checkpoint", type=str, default="checkpoints/checkpoint.pt",
                    help="Path to pretrained BioPM encoder checkpoint")
-    p.add_argument("--output", type=str, default="checkpoints/stage2_decoder.pt",
+    p.add_argument("--output", type=str, default="checkpoints/stage2_decoder_best.pt",
                    help="Where to save the best decoder checkpoint")
     p.add_argument("--init_checkpoint", type=str, default=None,
                    help="Optional stage2 decoder checkpoint to warm-start from")

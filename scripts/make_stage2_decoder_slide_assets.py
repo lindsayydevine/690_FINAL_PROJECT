@@ -52,12 +52,12 @@ def parse_args():
     )
     parser.add_argument(
         "--decoder_checkpoint",
-        default="presentation_outputs/stage2_decoder_presentation.pt",
+        default="checkpoints/stage2_decoder_best.pt",
         help="Trained stage-2 decoder checkpoint",
     )
     parser.add_argument(
         "--eval_json",
-        default="presentation_outputs/stage2_decoder_presentation_eval.json",
+        default="presentation_outputs/stage2_decoder_medium_eval_256.json",
         help="Stage 2 evaluation JSON with summary metrics",
     )
     parser.add_argument(
@@ -360,7 +360,7 @@ def save_metrics_figure(output_path: str, eval_json_path: str):
     ax.text(0.2, 5.1, "Stage 2 decoder validation summary",
             fontsize=22, weight="bold", color="#111111")
     ax.text(0.2, 4.68,
-            "Held-out validation performance from the medium Stage 2 run.",
+            "Held-out validation performance from the chosen best Stage 2 run.",
             fontsize=12.5, color="#444444")
 
     positions = [(0.4, 2.1), (3.35, 2.1), (6.3, 2.1), (9.25, 2.1)]
