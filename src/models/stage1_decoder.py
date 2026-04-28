@@ -155,6 +155,68 @@ def compute_stage1_losses(preds, target_x_acc_filt, valid_mask):
     }
 
 
+def render_body_prior_from_stage1_preds(preds, valid_mask=None, steps: int = 300,
+                                        support_sharpness: float = 10.0):
+    """
+    Soft differentiable renderer from Stage-1 token predictions to a 300x3 body window.
+
+    This avoids hard rounding of predicted metadata and provides a more faithful
+    body-motion prior for downstream Stage-2 reconstruction.
+    """
+    patch = preds["patch"]
+    pos = preds["pos"].clamp(0.0, 1.0)
+    axis_prob = torch.softmax(preds["axis_logits"], dim=-1)
+    length_samples = F.softplus(preds["length"] * LENGTH_SCALE) + 1.0
+    length_samples = length_samples.clamp(min=2.0, max=float(steps))
+
+    if valid_mask is None:
+        valid_mask = torch.ones(
+            patch.shape[:2], device=patch.device, dtype=torch.bool)
+
+    valid = valid_mask.to(dtype=patch.dtype)
+    axis_prob = axis_prob * valid.unsqueeze(-1)
+
+    batch_size, num_tokens, _ = patch.shape
+    patch_in = patch.reshape(batch_size * num_tokens, 1, 1, PATCH_DIM)
+
+    time_axis = torch.linspace(
+        0.0, float(steps - 1), steps, device=patch.device, dtype=patch.dtype)
+    centers = pos * float(steps - 1)
+    half_lengths = (length_samples / 2.0).clamp(min=1.0)
+    local_coord = (
+        time_axis.view(1, 1, steps) - centers.unsqueeze(-1)
+    ) / half_lengths.unsqueeze(-1)
+
+    grid = torch.zeros(
+        batch_size * num_tokens, 1, steps, 2,
+        device=patch.device, dtype=patch.dtype)
+    grid[..., 0] = local_coord.reshape(batch_size * num_tokens, 1, steps)
+
+    rendered = F.grid_sample(
+        patch_in,
+        grid,
+        mode="bilinear",
+        padding_mode="zeros",
+        align_corners=True,
+    ).view(batch_size, num_tokens, steps)
+
+    soft_support = torch.sigmoid(
+        support_sharpness * (1.0 - local_coord.abs())
+    ) * valid.unsqueeze(-1)
+
+    contrib = (
+        rendered.unsqueeze(-1) *
+        soft_support.unsqueeze(-1) *
+        axis_prob.unsqueeze(2)
+    )
+    denom = (
+        soft_support.unsqueeze(-1) *
+        axis_prob.unsqueeze(2)
+    ).sum(dim=1).clamp(min=1e-4)
+
+    return contrib.sum(dim=1) / denom
+
+
 @torch.no_grad()
 def assemble_x_acc_filt(preds, valid_mask=None):
     """Convert decoder heads back into an x_acc_filt-style tensor."""

@@ -2,6 +2,7 @@
 /preprocessed_data/
 /features/
 /group_share/
+/presentation_outputs/
 /synthetic_tokens/
 .DS_Store
 __pycache__/

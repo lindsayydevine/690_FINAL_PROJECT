@@ -30,7 +30,7 @@ def parse_args():
                    help="Path to pretrained BioPM encoder checkpoint")
     p.add_argument("--output", type=str, default="checkpoints/stage1_decoder.pt",
                    help="Where to save the best decoder checkpoint")
-    p.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"],
+    p.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda", "mps"],
                    help="Training device")
     p.add_argument("--batch_size", type=int, default=32,
                    help="Batch size")
