@@ -1,3 +1,5 @@
 /data/
 /preprocessed_data/
 /features/
+__pycache__
+/.gitignore

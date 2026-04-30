@@ -52,7 +52,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.models.biopm import load_pretrained_encoder, ConvEncode
 from src.data.preprocessing import load_preprocessed_h5
-from src.models.BioPMAutoregressor import BioPMAutoregressor
+from scripts.BioPMAutoregressor import BioPMAutoregressor
 
 def parse_args():
     p = argparse.ArgumentParser(
