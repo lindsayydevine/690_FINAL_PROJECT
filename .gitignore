@@ -1,5 +1,9 @@
 /data/
 /preprocessed_data/
 /features/
-__pycache__
-/.gitignore
+/group_share/
+/presentation_outputs/
+/synthetic_tokens/
+.DS_Store
+__pycache__/
+*.pyc

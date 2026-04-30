@@ -82,6 +82,8 @@ def parse_args():
                    help="Directory containing raw data files")
     p.add_argument("--output_dir", type=str, required=True,
                    help="Directory to save preprocessed HDF5 files")
+    p.add_argument("--label_dict", type=str, default=None,
+                   help="Optional path to annotation-label-dictionary.csv")
     p.add_argument("--window_sec", type=int, default=10,
                    help="Window size in seconds (default: 10)")
     p.add_argument("--slide_sec", type=int, default=5,
@@ -115,21 +117,36 @@ def load_raw_data(file_path, config):
     ones: time_array = np.arange(N) / original_sample_rate
     """
     df = pd.read_csv(file_path, sep=',', header=0, low_memory=False)
-    acc_raw = df.iloc[:, [1, 2, 3]].values
+
+    if {'x', 'y', 'z'}.issubset(df.columns):
+        acc_cols = ['x', 'y', 'z']
+    else:
+        acc_cols = list(df.columns[1:4])
+    acc_raw = df[acc_cols].values
     
     # Get the lookup table from config
     lookup = config.get('lookup', {})
 
     # Match the annotation column to the dictionary
     # Default to 0 if the string isn't in your dictionary
-    labels = df.iloc[:, 4].apply(lambda x: lookup.get(x, 0)).values
+    label_col = 'annotation' if 'annotation' in df.columns else df.columns[4]
+    labels = df[label_col].astype(str).apply(lambda x: lookup.get(x, 0)).values
 
     # Clean invalid values
     acc_df = pd.DataFrame(acc_raw, columns=['x', 'y', 'z'])
     acc_raw = acc_df.apply(pd.to_numeric, errors='coerce').ffill().bfill().values
 
-    # Synthetic timestamps at original sample rate
-    time_array = np.arange(len(acc_raw)) / config['ori_FS']
+    if 'time' in df.columns:
+        time_series = pd.to_datetime(df['time'], errors='coerce')
+        if time_series.notna().all():
+            time_array = (
+                time_series - time_series.iloc[0]
+            ).dt.total_seconds().to_numpy(dtype=np.float64)
+            if len(time_array) > 1 and np.all(np.diff(time_array) > 0):
+                return acc_raw, labels, time_array
+
+    # Fallback synthetic timestamps at original sample rate
+    time_array = np.arange(len(acc_raw), dtype=np.float64) / config['ori_FS']
 
     return acc_raw, labels, time_array
 
@@ -176,6 +193,31 @@ def get_global_label_map(lookup_dict, skip_labels={0}):
     global_to_new = {cpa: idx for idx, cpa in enumerate(all_cpa_codes)}
     
     return global_to_new
+
+
+def resolve_label_dict_path(raw_data_dir, explicit_path=None):
+    """Locate the Capture24 annotation dictionary."""
+    candidates = [
+        explicit_path,
+        os.path.join(raw_data_dir, 'annotation-label-dictionary.csv'),
+        './data/annotation-label-dictionary.csv',
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    raise FileNotFoundError(
+        "Could not find annotation-label-dictionary.csv. "
+        "Pass --label_dict or place it inside the raw data directory."
+    )
+
+
+def list_subject_files(raw_dir):
+    """Return participant files from Capture24, supporting .csv and .csv.gz."""
+    pattern = re.compile(r'^P\d+\.csv(?:\.gz)?$')
+    return sorted([
+        fname for fname in os.listdir(raw_dir)
+        if pattern.match(fname)
+    ])
 
 # ===================================================================
 # Main preprocessing loop
@@ -344,8 +386,11 @@ def main():
     print(f"  Pad size:      {config['pad_size']} patches/window")
     print()
 
+    label_dict_path = resolve_label_dict_path(args.raw_data_dir, args.label_dict)
+    print(f"  Label dict:    {label_dict_path}")
+
     # Load the annotation dictionary
-    dict_df = pd.read_csv('./data/annotation-label-dictionary.csv', usecols=['annotation'])
+    dict_df = pd.read_csv(label_dict_path, usecols=['annotation'])
 
     # 1. Generate the CPA lookup from your CSV
     annotation_lookup = {}
@@ -361,10 +406,7 @@ def main():
     config['lookup'] = annotation_lookup # Raw string -> CPA code
 
     raw_dir = args.raw_data_dir
-    files = sorted([
-        f for f in os.listdir(raw_dir) # do not get metadata csv or annotation-label-dictionary csv
-        if f.startswith('P') and f.endswith('.csv') # only care about P001 to P151 csvs
-    ])
+    files = list_subject_files(raw_dir)
 
     if not files:
         print(f"ERROR: No data files found in {raw_dir}")

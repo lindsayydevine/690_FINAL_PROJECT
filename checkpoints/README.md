@@ -1,21 +1,18 @@
 # Checkpoints
 
-The pretrained BioPM / 50MR checkpoint is included:
+Canonical checkpoints for the project:
 
+```text
+checkpoints/checkpoint.pt
+checkpoints/stage1_decoder.pt
+checkpoints/stage2_decoder_best.pt
 ```
-checkpoints/checkpoint.pt    (5.6 MB)
-```
 
-This file contains the pretrained weights for `encoder_acc` (the
-movement-element transformer, trained with 50% masking rate).
+- `checkpoints/checkpoint.pt`
+  Pretrained BioPM / 50MR encoder checkpoint for `encoder_acc`.
+- `checkpoints/stage1_decoder.pt`
+  Team Stage 1 decoder checkpoint for token-to-`x_acc_filt` reconstruction.
+- `checkpoints/stage2_decoder_best.pt`
+  Chosen Stage 2 decoder checkpoint for token-to-window reconstruction.
 
-It is a PyTorch state dict saved with `torch.save()` containing only
-the `encoder_acc` weights (not the classifier head or gravity CNN).
-
-The scripts in this package default to this path.  For example:
-
-```bash
-python scripts/extract_features.py \
-    --checkpoint checkpoints/checkpoint.pt \
-    ...
-```
+The repo should treat the three files above as the primary checkpoints.

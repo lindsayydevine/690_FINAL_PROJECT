@@ -193,6 +193,16 @@ For large datasets, you can increase `--batch_size` (default 32). If you have a 
 
 This is provided as an **optional** exploration path for students interested in generative approaches. It should not interfere with the main preprocessing + feature extraction workflow.
 
+### Synthetic Token Pipeline
+
+This repo now also includes a lightweight token-generation workflow built on top of BioPM representations:
+
+- `scripts/generation.py` — train a GRU autoregressor on BioPM token sequences
+- `scripts/sample_synthetic_tokens.py` — sample synthetic token sequences from a trained GRU checkpoint
+- `scripts/train_stage1_decoder.py` — train the Stage 1 decoder from BioPM tokens back to `x_acc_filt`
+
+The Stage 1 decoder stays in movement-element space rather than raw IMU space. This makes it a practical first step for evaluating whether generated token sequences remain structurally plausible before attempting a stronger decoder to waveform-level outputs.
+
 ---
 
 ## Known Limitations and Assumptions
