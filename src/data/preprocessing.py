@@ -367,3 +367,79 @@ def load_preprocessed_h5(data_root):
 
     return (acc_filt, pos_info, additional_embedding,
             all_label, all_pid, all_grav, all_raw)
+
+# ===================================================================
+# 4. Loading preprocessed HDF5 data individually per file
+# ===================================================================
+
+def load_preprocessed_h5_by_file(data_root):
+    """
+    Load each Data_MeLabel_*.h5 file separately.
+
+    Returns:
+        data_by_file: dict
+            key: e.g. "P002"
+            value: tuple:
+                (
+                    acc_filt,
+                    pos_info,
+                    additional_embedding,
+                    labels,
+                    subject_ids,
+                    gravity,
+                    raw_acc
+                )
+    """
+    pattern = re.compile(r"Data_MeLabel_(.*)\.h5")
+    matched = []
+
+    for root, _, fnames in os.walk(data_root):
+        for fname in fnames:
+            match = pattern.match(fname)
+            if match:
+                matched.append(os.path.join(root, fname))
+
+    if not matched:
+        raise FileNotFoundError(f"No Data_MeLabel_*.h5 files in {data_root}")
+
+    data_by_file = {}
+    NORM_SIZE = 32
+
+    for path in sorted(matched):
+        fname = os.path.basename(path)
+        key = pattern.match(fname).group(1)  # e.g. "P002"
+
+        subject_id_str = key
+        subject_id = int(re.sub("[^0-9]", "", subject_id_str))
+
+        with h5py.File(path, "r") as hf:
+            all_acc = np.array(hf["x_acc_filt"])
+
+            acc_filt = all_acc[:, :, :NORM_SIZE]
+            pos_info = all_acc[:, :, NORM_SIZE]
+            additional_embedding = all_acc[:, :, NORM_SIZE + 1:]
+
+            labels = np.array(hf["window_label"])
+            raw_acc = np.array(hf["window_acc_raw"])
+
+            if "gravity_window_40hz" in hf:
+                gravity = np.array(hf["gravity_window_40hz"])
+            elif "x_gravity" in hf:
+                gravity = np.array(hf["x_gravity"])
+            else:
+                gravity = None
+
+            n = len(labels)
+            subject_ids = np.full(n, subject_id)
+
+        data_by_file[key] = (
+            acc_filt,
+            pos_info,
+            additional_embedding,
+            labels,
+            subject_ids,
+            gravity,
+            raw_acc,
+        )
+
+    return data_by_file
