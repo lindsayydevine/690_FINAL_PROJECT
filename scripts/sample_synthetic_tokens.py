@@ -19,7 +19,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.data.preprocessing import load_preprocessed_h5
 from src.models.biopm import load_pretrained_encoder
-from scripts.BioPMAutoregressor import load_autoregressor_checkpoint
+from src.models.BioPMAutoregressor import load_autoregressor_checkpoint
 from scripts.generation import extract_tokens, generate_tokens
 
 

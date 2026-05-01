@@ -107,7 +107,7 @@ def generate_synthetic_data(args, model_biopm, gen_model, name, data, device='cp
             seed_tokens=seed,
             generate_steps=tokens.shape[1],
             device=device,
-            noise_std=0.01,
+            noise_std=0.03,
         )
         synthetic_windows.append(synthetic.cpu())
     synthetic_windows = torch.cat(synthetic_windows,dim=0)
@@ -120,14 +120,12 @@ def generate_synthetic_data(args, model_biopm, gen_model, name, data, device='cp
         f.create_dataset("source_subject_ids", data=pids)
 
     log_time("Generating synthetic tokens", start)
-
-def main():  
+  
+def main():
     total_start = time.time()
 
     start = time.time()
     args = parse_args()
-    log_time("Argument parsing", start)
-
 
     start = time.time()
     if args.device is not None:
@@ -139,27 +137,25 @@ def main():
     else:
         device = torch.device("cpu")
 
-    print("Hello")
     print(f"Using device: {device}")
     log_time("Device setup", start)
 
-
     start = time.time()
-
     data_dict = load_preprocessed_h5_by_file(args.data_dir)
+    print(f"Loaded {len(data_dict)} files: {list(data_dict.keys())}")
+    log_time("Loading preprocessed H5 files", start)
 
     start = time.time()
     biopm_chkpt = "./checkpoints/checkpoint.pt"
-    print("Loading checkpoint")
+    print("Loading BioPM checkpoint...")
     model_biopm = load_pretrained_encoder(biopm_chkpt, device=device)
     model_biopm.eval()
-    print("Checkpoint Loaded")
     log_time("Loading BioPM checkpoint", start)
 
     start = time.time()
     gen_chkpt = torch.load(
         "./checkpoints/biopm_gru_autoreg.pt",
-        map_location="cpu"
+        map_location=device
     )
 
     gen_model = BioPMAutoregressor(
@@ -167,21 +163,30 @@ def main():
         hidden_dim=gen_chkpt["hidden_dim"],
         num_layers=gen_chkpt["num_layers"],
         dropout=gen_chkpt["dropout"],
-    )
+    ).to(device)
 
     gen_model.load_state_dict(gen_chkpt["model_state_dict"])
-    gen_model.to(device)
     gen_model.eval()
     log_time("Loading autoregressive checkpoint", start)
 
-    for name,data in data_dict.items():
+    for name, data in data_dict.items():
         start = time.time()
-        print(f'Generating file for {name}')
-        generate_synthetic_data(args, model_biopm, gen_model, name, data, device)
-        print(f'Finished generating file for {name}')
-        log_time("Loading BioPM checkpoint", start)
+        print(f"Generating file for {name}...")
+
+        generate_synthetic_data(
+            args=args,
+            model_biopm=model_biopm,
+            gen_model=gen_model,
+            name=name,
+            data=data,
+            device=device,
+        )
+
+        print(f"Finished generating file for {name}")
+        log_time(f"Generating synthetic data for {name}", start)
+
     log_time("Total script runtime", total_start)
-    
+
 
 if __name__ == "__main__":
     main()
