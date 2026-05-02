@@ -52,7 +52,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.models.biopm import load_pretrained_encoder
 from src.data.preprocessing import load_preprocessed_h5
-from scripts.BioPMAutoregressor import BioPMAutoregressor
+from src.models.BioPMAutoregressor import BioPMAutoregressor
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -163,11 +163,11 @@ def eval_one_epoch(model, loader, device):
     return total_loss / n_batches, total_mse / n_batches
 
 @torch.no_grad()
-def generate_tokens(model, seed_tokens, generate_steps, device="cpu", noise_std=0.0):
+def generate_token(model, seed_tokens, generate_steps, device="cpu", noise_std=0.0):
     model.eval()
     tokens = seed_tokens.to(device)
     h = None
-
+    seed_len = seed_tokens.shape[1]
     _, h = model(tokens, h0=h)
     current = tokens[:, -1:, :]   
 
@@ -182,7 +182,7 @@ def generate_tokens(model, seed_tokens, generate_steps, device="cpu", noise_std=
         generated.append(next_token)
         current = next_token
 
-    return torch.cat(generated, dim=1)
+    return torch.cat(generated, dim=1)[:,seed_len:,:]
 
 
 def main():

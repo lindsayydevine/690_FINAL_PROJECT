@@ -7,3 +7,7 @@
 .DS_Store
 __pycache__/
 *.pyc
+/synthetic_data/
+/GenData/
+/_pre_data/
+/regdata/
